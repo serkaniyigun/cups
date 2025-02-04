@@ -86,13 +86,11 @@ static VALUE job_init(int argc, VALUE* argv, VALUE self)
   return self;
 }
 
-/*
- * Note: rb_hash_keys is defined in 1.8.6, but not in 1.8.7 ubuntu shared lib
- * This is so that I can get a list of keys to convert to options
- */
+/* Prototype for cups_keys_i function */
+static int cups_keys_i(VALUE key, VALUE value, VALUE ary);
+
 static int
-cups_keys_i(key, value, ary)
-  VALUE key, value, ary;
+cups_keys_i(VALUE key, VALUE value, VALUE ary)
 {
   if (key == Qundef) return ST_CONTINUE;
   rb_ary_push(ary, key);
@@ -116,7 +114,14 @@ static VALUE cups_print(VALUE self)
   char *fname = RSTRING_PTR(file); // Filename
   char *title = T_STRING == TYPE(rname) ? RSTRING_PTR(rname) : "rCups";
   char *target = RSTRING_PTR(printer); // Target printer string
-  char *url = RSTRING_PTR(url_path); // Server URL address
+
+  const char *server_url = NULL;
+  if (NIL_P(url_path)) {
+    server_url = cupsServer();
+  } else {
+    server_url = RSTRING_PTR(url_path);
+  }
+
   int port = 631; // Default CUPS port
 
   VALUE job_options = rb_iv_get(self, "@job_options");
@@ -147,12 +152,9 @@ static VALUE cups_print(VALUE self)
     cupsAddOption(iter_str, value_str, num_options++, &options);
   }
 
-  if(NIL_P(url)) {
-    url = cupsServer();
-  }
-
   int encryption = (http_encryption_t)cupsEncryption();
-  http_t *http = httpConnect2(url, port, NULL, AF_UNSPEC, (http_encryption_t) encryption, 1, 30000, NULL);
+  http_t *http = httpConnect2(server_url, port, NULL, AF_UNSPEC,
+                            (http_encryption_t) encryption, 1, 30000, NULL);
 
   job_id = cupsPrintFile2(http, target, fname, title, num_options, options); // Do it. "rCups" should be the filename/path
   //
@@ -238,11 +240,11 @@ static VALUE cups_job_failed(VALUE self)
 {
   VALUE job_id = rb_iv_get(self, "@job_id");
 
- if (NIL_P(job_id) || !NUM2INT(job_id) == 0) {
-   return Qfalse;
- } else {
-   return Qtrue;
- }
+  if (NIL_P(job_id) || (NUM2INT(job_id) == 0)) {
+    return Qfalse;
+  } else {
+    return Qtrue;
+  }
 }
 
 /*
@@ -255,7 +257,7 @@ static VALUE cups_get_error_reason(VALUE self)
 {
   VALUE job_id = rb_iv_get(self, "@job_id");
 
-  if (NIL_P(job_id) || !NUM2INT(job_id) == 0) {
+  if (NIL_P(job_id) || (NUM2INT(job_id) == 0)) {
     return Qnil;
   } else {
     VALUE error_exp = rb_str_new2(cupsLastErrorString());
@@ -273,7 +275,7 @@ static VALUE cups_get_error_code(VALUE self)
 {
   VALUE job_id = rb_iv_get(self, "@job_id");
 
-  if (NIL_P(job_id) || !NUM2INT(job_id) == 0) {
+  if (NIL_P(job_id) || (NUM2INT(job_id) == 0)) {
     return Qnil;
   } else {
     VALUE ipp_error_code = INT2NUM(cupsLastError());
